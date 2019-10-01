@@ -25,7 +25,8 @@ function buildElement(vm, parent, tempElem) {
     return;
   } else if (componentTags.has(tempElem.tagName.toLowerCase())) {
     // 组件
-    createComponent(vm, tempElem.tagName.toLowerCase(), parent);
+    let attrObj = transformVueAttr(vm, tempElem);
+    createComponent(vm, tempElem.tagName.toLowerCase(), parent, attrObj);
     return;
   } else if (tempElem.nodeType === 1) {
     // element
@@ -71,7 +72,7 @@ function buildElement(vm, parent, tempElem) {
   if (attrs && attrs.includes("v-for")) {
     let [alias, source] = resolveVueAttr(vm, "v-for", null, tempElem.getAttribute("v-for"));
     let context = Object.create(vm);
-    for (let i in Object.keys(source)) {
+    for (let i of Object.keys(source)) {
       context[alias] = source[i];
       for (let childNode of childNodes) {
         buildElement(context, elementToInsert, childNode);
@@ -98,24 +99,37 @@ function createEmptyElement(tag) {
 
 function createElem(vm, tempElem) {
   let newElem = createEmptyElement(tempElem.tagName);
-  transformAttr(vm, newElem, tempElem);
+  let attrObj = transformVueAttr(vm, tempElem);
+  for (let i of Object.keys(attrObj)) {
+    newElem.setAttribute(i, attrObj[i]);
+  }
   return newElem;
 }
 
-function createComponent(vm, name, parent) {
+function createComponent(vm, name, parent, props) {
   // 由组件自身定义的component或Vue.component声明的全局组件获取组件的构造函数
   let Ctor = vm.$options.components && vm.$options.components[name] || vm.constructor._base._components[name];
+  let options = Ctor.options;
+  // 处理props
+  if (options.props && Array.isArray(options.props)) {
+    for (let i of Object.keys(props)) {
+      if (options.props.includes(i)) {
+        options.data[i] = props[i];
+      }
+    }
+  }
   // 将组件的template字符串转化为DOM
   let tempElem = document.createElement("div");
   tempElem.innerHTML = Ctor.options.template;
   // 将template的根元素插入到DOM中作为组件的el
-  Ctor.options.el = tempElem.firstChild;
+  options.el = tempElem.firstChild;
   parent.appendChild(tempElem.firstChild);
-  new Ctor(Ctor.options);
+  new Ctor(options);
 }
 
-function transformAttr(vm, newElem, tempElem) {
+function transformVueAttr(vm, tempElem) {
   let attrs = getAttrs(tempElem);
+  let resAttrObj = {};
   for (let attr of attrs) {
     let [matchAttr, matchParam] = [null, null];
     let attrVal = tempElem.getAttribute(attr);
@@ -128,12 +142,13 @@ function transformAttr(vm, newElem, tempElem) {
     if (matchAttr) {
       // vue模板属性
       const [attr, val] = resolveVueAttr(vm, matchAttr, matchParam, attrVal);
-      newElem.setAttribute(attr, val);
+      resAttrObj[attr] = val;
     } else {
       // DOM原生属性
-      newElem.setAttribute(attr, attrVal);
+      resAttrObj[attr] = attrVal;
     }
   }
+  return resAttrObj;
 }
 
 function resolveVueAttr(vm, attr, param, val) {
