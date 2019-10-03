@@ -2,7 +2,7 @@ import Dep, {targetStack} from './dep'
 import {callHook} from "./instance";
 
 export class Watcher {
-  constructor(vm, updateFn, options) {
+  constructor(vm, updateFn) {
     this.vm = vm;
     this.getter = updateFn;
     this.deps = [];
@@ -19,16 +19,17 @@ export class Watcher {
   cleanupDeps() {
     this.deps.forEach((dep) => {
       dep.removeSub(this);
-      this.deps.length = 0;
-    })
+    });
+    this.deps = [];
   }
 
   get() {
+    this.cleanupDeps();
     Dep.target = this;
     targetStack.push(this);
     this.getter.call(this.vm);
-    Dep.target = targetStack.pop();
-    this.cleanupDeps();
+    targetStack.pop();
+    Dep.target = targetStack[targetStack.length-1];
   }
 
   update() {

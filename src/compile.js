@@ -1,37 +1,45 @@
-const vueAttrReg = [/^(v-on):(.+?)$/, /^(@)(.+?)$/, /^(v-bind):(.+?)$/, /^(:)(.+)?$/];
 // v-if语句上下文栈
 const ifStack = [];
 
 export function updateDOM(vm, el) {
+  clearListeners(vm, el);
   // template由字符串转化为DOM
-  let tempElm = document.createElement("div");
-  tempElm.innerHTML = vm.$options.template;
+  let tempElmContainer = document.createElement("div");
+  tempElmContainer.innerHTML = vm.$options.template;
+  let tempElm = tempElmContainer.firstChild;
   // 新的要插入el的DOM
-  let newElm = createEmptyElement(tempElm.firstChild.tagName);
+  let newElmContainer = createEmptyElement("div");
   // 由模板和vm实例构建新的DOM
-  buildElement(vm, newElm, tempElm.firstChild);
-  el.innerHTML = newElm.firstChild.innerHTML;
+  buildElement(vm, newElmContainer, tempElm);
+  let newElm = newElmContainer.firstChild;
+  el.parentElement.insertBefore(newElm, el);
+  el.parentElement.removeChild(el);
+  vm.$options.el = newElm;
 }
 
 function buildElement(vm, parent, tempElem) {
   let elementToInsert = null;
   let attrs = getAttrs(tempElem);
-  // 组件名称Set
+  let events = {};
+  // 注册过的组件名称Set
   let componentTags = new Set(Object.keys(vm.$options.components || {})
     .concat(Object.keys(vm.constructor._base._components || {})));
   if (tempElem.nodeType === 3) {
-    // textNode
+    // 文本节点
     parent.appendChild(createTextNode(vm, tempElem.data));
     return;
-  } else if (componentTags.has(tempElem.tagName.toLowerCase())) {
-    // 组件
-    let attrObj = transformVueAttr(vm, tempElem);
-    createComponent(vm, tempElem.tagName.toLowerCase(), parent, attrObj);
-    return;
-  } else if (tempElem.nodeType === 1) {
-    // element
+  } else {
+    for (let attr of attrs) {
+      if (/^v-on:(.+?)$/.test(attr) || /^@(.+?)$/.test(attr)) {
+        let [event, callback] = resolveVueAttr(vm, "v-on", RegExp.$1, tempElem.getAttribute(attr));
+        if (!events[event]) {
+          events[event] = [];
+        }
+        events[event].push(callback);
+      }
+    }
     let hasNextSibling = tempElem.nextElementSibling;
-    // 处理v-if语句
+    // v-if语句
     if (attrs.includes("v-if")) {
       const exp = tempElem.getAttribute("v-if");
       if (resolveExp(vm, exp)) {
@@ -60,12 +68,31 @@ function buildElement(vm, parent, tempElem) {
       }
     } else {
       let prevSibling = tempElem.previousElementSibling;
-      if (prevSibling && getAttrs(prevSibling).includes("v-if", "v-else-if")) {
+      let prevAttrs = getAttrs(prevSibling);
+      if (prevAttrs && prevAttrs.includes("v-if") || prevAttrs.includes("v-else-if") ) {
         ifStack.pop();
       }
     }
+    if (componentTags.has(tempElem.tagName.toLowerCase())) {
+      // 组件
+      let attrObj = transformVBindAttr(vm, tempElem);
+      let newComponent = createComponent(vm, tempElem.tagName.toLowerCase(), attrObj, events);
+      elementToInsert = newComponent.$options.el;
+      elementToInsert._componentInstance = newComponent;
+    } else {
+      // DOM元素
+      elementToInsert = createElem(vm, tempElem);
+      // 事件注册与监听
+      for (let event of Object.keys(events)) {
+        events[event] = events[event].map((e) => e.bind(vm));
+        events[event].forEach((e) => {
+          elementToInsert.addEventListener(event, e);
+          vm.$on(event, e);
+        });
+      }
+      elementToInsert._listeners = events;
+    }
   }
-  elementToInsert = createElem(vm, tempElem);
   parent.appendChild(elementToInsert);
   let childNodes = Array.from(tempElem.childNodes);
   // v-for语句
@@ -88,9 +115,8 @@ function buildElement(vm, parent, tempElem) {
 export function createTextNode(vm, text) {
   if (text) {
     text = text.replace(/{{(.*?)}}/g, (match, $1) => resolveExp(vm, $1, "string"));
-    return document.createTextNode(text);
   }
-  return document.createTextNode("");
+  return document.createTextNode(text? text: "");
 }
 
 function createEmptyElement(tag) {
@@ -99,41 +125,63 @@ function createEmptyElement(tag) {
 
 function createElem(vm, tempElem) {
   let newElem = createEmptyElement(tempElem.tagName);
-  let attrObj = transformVueAttr(vm, tempElem);
+  let attrObj = transformVBindAttr(vm, tempElem);
   for (let i of Object.keys(attrObj)) {
     newElem.setAttribute(i, attrObj[i]);
   }
   return newElem;
 }
 
-function createComponent(vm, name, parent, props) {
+function createComponent(vm, name, props, events) {
   // 由组件自身定义的component或Vue.component声明的全局组件获取组件的构造函数
   let Ctor = vm.$options.components && vm.$options.components[name] || vm.constructor._base._components[name];
+  if (typeof Ctor !== "function") {
+    Ctor = vm._base.extend(Ctor);
+  }
   let options = Ctor.options;
-  // 处理props
+  // 将传入的 props 设为子组件实例的属性
+  options.propsData = {};
   if (options.props && Array.isArray(options.props)) {
     for (let i of Object.keys(props)) {
       if (options.props.includes(i)) {
-        options.data[i] = props[i];
+          options.propsData[i] = props[i];
       }
     }
   }
+  for (let event of Object.keys(events)) {
+    events[event].forEach((e) => e.bind(vm));
+  }
+  options.parentEvents = events;
   // 将组件的template字符串转化为DOM
-  let tempElem = document.createElement("div");
-  tempElem.innerHTML = Ctor.options.template;
+  let tempElmContainer = document.createElement("div");
+  tempElmContainer.innerHTML = Ctor.options.template;
+  let temElm = tempElmContainer.firstChild;
   // 将template的根元素插入到DOM中作为组件的el
-  options.el = tempElem.firstChild;
-  parent.appendChild(tempElem.firstChild);
-  new Ctor(options);
+  options.el = temElm;
+  return new Ctor(options);
 }
 
-function transformVueAttr(vm, tempElem) {
+function clearListeners(vm, el) {
+  if (el._listeners) {
+    for (let event of Object.keys(el._listeners)) {
+      el._listeners[event].forEach((e) => el.removeEventListener(event, e));
+    }
+  }
+  if (el._componentInstance) {
+    vm = el._componentInstance;
+  }
+  let childNodes = Array.from(el.childNodes);
+  childNodes.forEach((e) => clearListeners(vm, e));
+  vm.$destroy();
+}
+
+function transformVBindAttr(vm, tempElem) {
   let attrs = getAttrs(tempElem);
   let resAttrObj = {};
   for (let attr of attrs) {
     let [matchAttr, matchParam] = [null, null];
     let attrVal = tempElem.getAttribute(attr);
-    for(let vAttrReg of vueAttrReg){
+    for(let vAttrReg of [/^(v-bind):(.+?)$/, /^(:)(.+)?$/]){
       if (vAttrReg.test(attr)) {
         [matchAttr, matchParam] = [RegExp.$1, RegExp.$2];
         break;
@@ -142,10 +190,14 @@ function transformVueAttr(vm, tempElem) {
     if (matchAttr) {
       // vue模板属性
       const [attr, val] = resolveVueAttr(vm, matchAttr, matchParam, attrVal);
-      resAttrObj[attr] = val;
+      if (attr) {
+        resAttrObj[attr] = val;
+      }
     } else {
-      // DOM原生属性
-      resAttrObj[attr] = attrVal;
+      if (attr.slice(0, 2) !== "v-" && attr.slice(0, 1) !== "@" && attr.slice(0, 1) !== ":" ) {
+        // DOM原生属性
+        resAttrObj[attr] = attrVal;
+      }
     }
   }
   return resAttrObj;
@@ -171,7 +223,7 @@ function resolveExp(vm, exp, type) {
   if (type === "string") {
     evalString = "with(vm){return toString(" + exp +")}"
   } else if (type === "event") {
-
+    evalString = "with(vm){return function(){" + exp + "}}"
   } else {
     evalString = "with(vm){return (" + exp +")}";
   }
@@ -179,7 +231,8 @@ function resolveExp(vm, exp, type) {
 }
 
 function getAttrs(elem) {
-  if (elem.attributes) {
+  if (elem && elem.attributes) {
     return Array.from(elem.attributes).map((attrObj) => attrObj.name)
   }
+  return [];
 }
