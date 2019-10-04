@@ -31,7 +31,7 @@ Vue.prototype._init = function (options) {
   let vm = this;
   vm.$options = options;
   if (!vm.$options.template) {
-    vm.$options.template = vm.$options.el.outerHTML;
+    vm.$options.template = vm.$options.el.outerHTML || "";
   }
   initEvent(vm);
   callHook(vm, "beforeCreate");
@@ -53,7 +53,9 @@ Vue.prototype.$mount = function () {
 };
 
 Vue.prototype.$destroy = function () {
-  callHook(this, "destroy");
+  callHook(this, "beforeDestroy");
+  this._watcher.teardown();
+  callHook(this, "destroyed");
 };
 
 export function proxy (target, sourceKey, key) {

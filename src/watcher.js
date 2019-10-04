@@ -4,6 +4,7 @@ import {callHook} from "./instance";
 export class Watcher {
   constructor(vm, updateFn) {
     this.vm = vm;
+    this.vm._watcher = this;
     this.getter = updateFn;
     this.deps = [];
     this.update();
@@ -36,5 +37,12 @@ export class Watcher {
     callHook(this.vm, "beforeUpdate");
     this.get();
     callHook(this.vm, "updated")
+  }
+
+  teardown () {
+    let i = this.deps.length;
+    while (i--) {
+      this.deps[i].removeSub(this)
+    }
   }
 }

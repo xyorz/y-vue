@@ -1,4 +1,4 @@
-// v-if语句上下文栈
+// v-if上下文栈
 const ifStack = [];
 
 export function updateDOM(vm, el) {
@@ -8,7 +8,7 @@ export function updateDOM(vm, el) {
   tempElmContainer.innerHTML = vm.$options.template;
   let tempElm = tempElmContainer.firstChild;
   // 新的要插入el的DOM
-  let newElmContainer = createEmptyElement("div");
+  let newElmContainer = document.createElement("div");
   // 由模板和vm实例构建新的DOM
   buildElement(vm, newElmContainer, tempElm);
   let newElm = newElmContainer.firstChild;
@@ -40,17 +40,8 @@ function buildElement(vm, parent, tempElem, noFor) {
     parent.appendChild(createTextNode(vm, tempElem.data));
     return;
   } else {
-    for (let attr of attrs) {
-      if (/^v-on:(.+?)$/.test(attr) || /^@(.+?)$/.test(attr)) {
-        let [event, callback] = resolveVueAttr(vm, "v-on", RegExp.$1, tempElem.getAttribute(attr));
-        if (!events[event]) {
-          events[event] = [];
-        }
-        events[event].push(callback);
-      }
-    }
-    let hasNextSibling = tempElem.nextElementSibling;
-    // v-if语句
+    let hasNextSibling = !!tempElem.nextElementSibling;
+    // v-if语句，判断是否渲染元素，不渲染直接return
     if (attrs.includes("v-if")) {
       const exp = tempElem.getAttribute("v-if");
       if (resolveExp(vm, exp)) {
@@ -84,6 +75,17 @@ function buildElement(vm, parent, tempElem, noFor) {
         ifStack.pop();
       }
     }
+    // v-if结束，元素需要渲染
+    // 处理元素事件，生成 events 对象
+    for (let attr of attrs) {
+      if (/^v-on:(.+?)$/.test(attr) || /^@(.+?)$/.test(attr)) {
+        let [event, callback] = resolveVueAttr(vm, "v-on", RegExp.$1, tempElem.getAttribute(attr));
+        if (!events[event]) {
+          events[event] = [];
+        }
+        events[event].push(callback);
+      }
+    }
     if (componentTags.has(tempElem.tagName.toLowerCase())) {
       // 组件
       let attrObj = transformVBindAttr(vm, tempElem);
@@ -104,8 +106,8 @@ function buildElement(vm, parent, tempElem, noFor) {
       elementToInsert._listeners = events;
     }
   }
-  let childNodes = Array.from(tempElem.childNodes);
   parent.appendChild(elementToInsert);
+  let childNodes = Array.from(tempElem.childNodes);
   childNodes.forEach(function (node) {
     buildElement(vm, elementToInsert, node);
   })
@@ -118,12 +120,8 @@ export function createTextNode(vm, text) {
   return document.createTextNode(text? text: "");
 }
 
-function createEmptyElement(tag) {
-  return document.createElement(tag);
-}
-
 function createElem(vm, tempElem) {
-  let newElem = createEmptyElement(tempElem.tagName);
+  let newElem = document.createElement(tempElem.tagName);
   let attrObj = transformVBindAttr(vm, tempElem);
   for (let i of Object.keys(attrObj)) {
     newElem.setAttribute(i, attrObj[i]);
@@ -134,11 +132,12 @@ function createElem(vm, tempElem) {
 function createComponent(vm, name, props, events) {
   // 由组件自身定义的component或Vue.component声明的全局组件获取组件的构造函数
   let Ctor = vm.$options.components && vm.$options.components[name] || vm.constructor._base._components[name];
+  // 如果 Ctor 不是构造函数，调用 extend 生成构造
   if (typeof Ctor !== "function") {
     Ctor = vm._base.extend(Ctor);
   }
   let options = Ctor.options;
-  // 将传入的 props 设为子组件实例的属性
+  // 处理 props
   options.propsData = {};
   if (options.props && Array.isArray(options.props)) {
     for (let i of Object.keys(props)) {
@@ -147,11 +146,12 @@ function createComponent(vm, name, props, events) {
       }
     }
   }
+  // event 的 this 指针绑定实例
   for (let event of Object.keys(events)) {
     events[event] = events[event].map((e) => e.bind(vm));
   }
   options.parentEvents = events;
-  // 将组件的template字符串转化为DOM
+  // template 的根元素作为 el
   let tempElmContainer = document.createElement("div");
   tempElmContainer.innerHTML = Ctor.options.template;
   let temElm = tempElmContainer.firstChild;
@@ -168,10 +168,10 @@ function clearListeners(vm, el) {
   }
   if (el._componentInstance) {
     vm = el._componentInstance;
+    vm.$destroy();
   }
   let childNodes = Array.from(el.childNodes);
   childNodes.forEach((e) => clearListeners(vm, e));
-  vm.$destroy();
 }
 
 function transformVBindAttr(vm, tempElem) {
@@ -220,14 +220,14 @@ function resolveVueAttr(vm, attr, param, val) {
 function resolveExp(vm, exp, type) {
   let evalString = "";
   if (type === "string") {
-    evalString = "with(vm){return toString(" + exp +")}"
+    evalString = "with(vm){return toString(" + exp +")}";
   } else if (type === "event") {
     if (/^[a-zA-Z][a-zA-Z0-9]*?$/.test(exp)) {
       // 函数
-      evalString = "with(vm){return " + exp + "}"
+      evalString = "with(vm){return " + exp + "}";
     } else {
       // 语句
-      evalString = "with(vm){return function(){" + exp + "}}"
+      evalString = "with(vm){return function(){" + exp + "}}";
     }
   } else {
     evalString = "with(vm){return (" + exp +")}";

@@ -29,7 +29,7 @@ function observeArray(arr) {
   arr.forEach((a) => observe(a));
 }
 
-function observeArrayVal(arr, dep) {
+function observeArrayMutation(arr, dep) {
   let arrayProto = Array.prototype;
   let arrayReactiveMethods = Object.create(arrayProto);
   mutationMethods.forEach((method) => {
@@ -56,7 +56,7 @@ export function defineReactive(obj, key) {
   observe(obj[key]);
   let value = obj[key];
   if (Array.isArray(value)) {
-    observeArrayVal(value, dep);
+    observeArrayMutation(value, dep);
   }
   Object.defineProperty(obj, key, {
     enumerable: true,
