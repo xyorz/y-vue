@@ -17,10 +17,21 @@ export function updateDOM(vm, el) {
   vm.$options.el = newElm;
 }
 
-function buildElement(vm, parent, tempElem) {
+function buildElement(vm, parent, tempElem, noFor) {
   let elementToInsert = null;
   let attrs = getAttrs(tempElem);
   let events = {};
+  // v-for 语句
+  if (attrs && attrs.includes("v-for") && !noFor) {
+    let [alias, source] = resolveVueAttr(vm, "v-for", null, tempElem.getAttribute("v-for"));
+    // 创建变量上下文
+    let context = Object.create(vm);
+    for (let i of Object.keys(source)) {
+      context[alias] = source[i];
+      buildElement(context, parent, tempElem, true);
+    }
+    return;
+  }
   // 注册过的组件名称Set
   let componentTags = new Set(Object.keys(vm.$options.components || {})
     .concat(Object.keys(vm.constructor._base._components || {})));
@@ -93,23 +104,11 @@ function buildElement(vm, parent, tempElem) {
       elementToInsert._listeners = events;
     }
   }
-  parent.appendChild(elementToInsert);
   let childNodes = Array.from(tempElem.childNodes);
-  // v-for语句
-  if (attrs && attrs.includes("v-for")) {
-    let [alias, source] = resolveVueAttr(vm, "v-for", null, tempElem.getAttribute("v-for"));
-    let context = Object.create(vm);
-    for (let i of Object.keys(source)) {
-      context[alias] = source[i];
-      for (let childNode of childNodes) {
-        buildElement(context, elementToInsert, childNode);
-      }
-    }
-  } else {
-    childNodes.forEach(function (node) {
-      buildElement(vm, elementToInsert, node);
-    })
-  }
+  parent.appendChild(elementToInsert);
+  childNodes.forEach(function (node) {
+    buildElement(vm, elementToInsert, node);
+  })
 }
 
 export function createTextNode(vm, text) {
@@ -149,7 +148,7 @@ function createComponent(vm, name, props, events) {
     }
   }
   for (let event of Object.keys(events)) {
-    events[event].forEach((e) => e.bind(vm));
+    events[event] = events[event].map((e) => e.bind(vm));
   }
   options.parentEvents = events;
   // 将组件的template字符串转化为DOM
@@ -223,7 +222,13 @@ function resolveExp(vm, exp, type) {
   if (type === "string") {
     evalString = "with(vm){return toString(" + exp +")}"
   } else if (type === "event") {
-    evalString = "with(vm){return function(){" + exp + "}}"
+    if (/^[a-zA-Z][a-zA-Z0-9]*?$/.test(exp)) {
+      // 函数
+      evalString = "with(vm){return " + exp + "}"
+    } else {
+      // 语句
+      evalString = "with(vm){return function(){" + exp + "}}"
+    }
   } else {
     evalString = "with(vm){return (" + exp +")}";
   }

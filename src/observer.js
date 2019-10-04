@@ -1,8 +1,10 @@
 import Dep from './dep'
+const mutationMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
+
 export class Observer {
   constructor(value) {
     if (Array.isArray(value)) {
-      this.observeArray(value)
+      observeArray(value)
     } else {
       this.walk(value)
     }
@@ -14,10 +16,6 @@ export class Observer {
       defineReactive(obj, keys[i])
     }
   }
-
-  observeArray(arr) {
-    arr.forEach((a) => observe(a));
-  }
 }
 
 export function observe (value) {
@@ -27,10 +25,39 @@ export function observe (value) {
   return new Observer(value);
 }
 
+function observeArray(arr) {
+  arr.forEach((a) => observe(a));
+}
+
+function observeArrayVal(arr, dep) {
+  let arrayProto = Array.prototype;
+  let arrayReactiveMethods = Object.create(arrayProto);
+  mutationMethods.forEach((method) => {
+    arrayReactiveMethods[method] = function (...args) {
+      const result = arrayProto[method].apply(arr, ...args);
+      let inserted;
+      if (["unshift", "push"].includes(method)) {
+        inserted = args;
+      } else if ("splice" === method) {
+        inserted = args.slice(2);
+      }
+      if (inserted) {
+        observeArray(inserted);
+      }
+      dep.notify();
+      return result;
+    }
+  });
+  arr.__proto__ = arrayReactiveMethods;
+}
+
 export function defineReactive(obj, key) {
   let dep = new Dep();
   observe(obj[key]);
   let value = obj[key];
+  if (Array.isArray(value)) {
+    observeArrayVal(value, dep);
+  }
   Object.defineProperty(obj, key, {
     enumerable: true,
     configurable: true,
