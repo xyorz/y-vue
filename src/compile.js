@@ -134,7 +134,7 @@ function createComponent(vm, name, props, events) {
   let Ctor = vm.$options.components && vm.$options.components[name] || vm.constructor._base._components[name];
   // 如果 Ctor 不是构造函数，调用 extend 生成构造
   if (typeof Ctor !== "function") {
-    Ctor = vm._base.extend(Ctor);
+    Ctor = vm.constructor._base.extend(Ctor);
   }
   let options = Ctor.options;
   // 处理 props
