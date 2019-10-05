@@ -2,7 +2,7 @@
 const ifStack = [];
 
 export function updateDOM(vm, el) {
-  clearListeners(vm, el);
+  destroyElement(vm, el);
   // template由字符串转化为DOM
   let tempElmContainer = document.createElement("div");
   tempElmContainer.innerHTML = vm.$options.template;
@@ -60,6 +60,7 @@ function buildElement(vm, parent, tempElem, noFor) {
         if (resolveExp(vm, exp)) {
           hasNextSibling && ifStack.push(true);
         } else {
+          hasNextSibling && ifStack.push(false);
           return;
         }
       }
@@ -71,7 +72,7 @@ function buildElement(vm, parent, tempElem, noFor) {
     } else {
       let prevSibling = tempElem.previousElementSibling;
       let prevAttrs = getAttrs(prevSibling);
-      if (prevAttrs && prevAttrs.includes("v-if") || prevAttrs.includes("v-else-if") ) {
+      if (prevAttrs && (prevAttrs.includes("v-if") || prevAttrs.includes("v-else-if"))) {
         ifStack.pop();
       }
     }
@@ -160,7 +161,7 @@ function createComponent(vm, name, props, events) {
   return new Ctor(options);
 }
 
-function clearListeners(vm, el) {
+function destroyElement(vm, el) {
   if (el._listeners) {
     for (let event of Object.keys(el._listeners)) {
       el._listeners[event].forEach((e) => el.removeEventListener(event, e));
@@ -171,7 +172,7 @@ function clearListeners(vm, el) {
     vm.$destroy();
   }
   let childNodes = Array.from(el.childNodes);
-  childNodes.forEach((e) => clearListeners(vm, e));
+  childNodes.forEach((e) => destroyElement(vm, e));
 }
 
 function transformVBindAttr(vm, tempElem) {
