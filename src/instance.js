@@ -28,8 +28,17 @@ Vue.component = function(name, options) {
 };
 
 Vue.prototype._init = function (options) {
+  // docContent
+  if (document) {
+    this.document = document
+  } else {
+    this.document = options.docContent
+  }
   let vm = this;
   vm.$options = options;
+  if (typeof vm.$options.el === "string") {
+    vm.$options.el = vm.document.querySelector(vm.$options.el);
+  }
   if (!vm.$options.template) {
     vm.$options.template = vm.$options.el.outerHTML || "";
   }

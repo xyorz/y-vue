@@ -4,11 +4,11 @@ const ifStack = [];
 export function updateDOM(vm, el) {
   destroyElement(vm, el);
   // template由字符串转化为DOM
-  let tempElmContainer = document.createElement("div");
+  let tempElmContainer = vm.document.createElement("div");
   tempElmContainer.innerHTML = vm.$options.template;
   let tempElm = tempElmContainer.firstChild;
   // 新的要插入el的DOM
-  let newElmContainer = document.createElement("div");
+  let newElmContainer = vm.document.createElement("div");
   // 由模板和vm实例构建新的DOM
   buildElement(vm, newElmContainer, tempElm);
   let newElm = newElmContainer.firstChild;
@@ -118,11 +118,11 @@ export function createTextNode(vm, text) {
   if (text) {
     text = text.replace(/{{(.*?)}}/g, (match, $1) => resolveExp(vm, $1, "string"));
   }
-  return document.createTextNode(text? text: "");
+  return vm.document.createTextNode(text? text: "");
 }
 
 function createElem(vm, tempElem) {
-  let newElem = document.createElement(tempElem.tagName);
+  let newElem = vm.document.createElement(tempElem.tagName);
   let attrObj = transformVBindAttr(vm, tempElem);
   for (let i of Object.keys(attrObj)) {
     newElem.setAttribute(i, attrObj[i]);
@@ -153,7 +153,7 @@ function createComponent(vm, name, props, events) {
   }
   options.parentEvents = events;
   // template 的根元素作为 el
-  let tempElmContainer = document.createElement("div");
+  let tempElmContainer = vm.document.createElement("div");
   tempElmContainer.innerHTML = Ctor.options.template;
   let temElm = tempElmContainer.firstChild;
   // 将template的根元素插入到DOM中作为组件的el
